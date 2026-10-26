@@ -116,21 +116,21 @@ function App() {
     try {
       response = await fetch(`/api${path}`, { ...options, headers })
     } catch (networkError) {
-  throw new Error(
-    'Cannot reach the backend. Check that Spring Boot is running.',
-    { cause: networkError }
-  )
-}
+      throw new Error(
+        'Cannot reach the backend. Check that Spring Boot is running.',
+        { cause: networkError }
+      )
+    }
 
     if (!response.ok) {
       const rawBody = await response.text().catch(() => '')
       let body
 
-try {
-  body = rawBody ? JSON.parse(rawBody) : null
-} catch {
-  // The response is not JSON; rawBody remains available as a fallback.
-}
+      try {
+        body = rawBody ? JSON.parse(rawBody) : null
+      } catch {
+        // The response is not JSON; rawBody remains available as a fallback.
+      }
       const requestError = new Error(
         body?.message || body?.detail || body?.error || rawBody || `Request failed (${response.status})`
       )
@@ -157,18 +157,18 @@ try {
   }, [token])
 
   const fetchCategories = useCallback(async () => {
-  try {
-    const data = await apiRequest('/categories', {}, '')
-    setCategories(Array.isArray(data) ? data : [])
-    setCategoriesError('')
-  } catch (err) {
-    setCategoriesError(err.message || 'Could not load categories.')
-  } finally {
-    setCategoriesLoading(false)
-  }
-}, [apiRequest])
+    try {
+      const data = await apiRequest('/categories', {}, '')
+      setCategories(Array.isArray(data) ? data : [])
+      setCategoriesError('')
+    } catch (err) {
+      setCategoriesError(err.message || 'Could not load categories.')
+    } finally {
+      setCategoriesLoading(false)
+    }
+  }, [apiRequest])
 
-  
+
 
   const fetchOrders = useCallback(async () => {
     if (!token) {
@@ -228,31 +228,31 @@ try {
   }, [apiRequest, isAdmin, loadAdminOrders])
 
   useEffect(() => {
-  let active = true
+    let active = true
 
-  async function loadCategories() {
-    try {
-      const data = await apiRequest('/categories', {}, '')
+    async function loadCategories() {
+      try {
+        const data = await apiRequest('/categories', {}, '')
 
-      if (!active) return
+        if (!active) return
 
-      setCategories(Array.isArray(data) ? data : [])
-      setCategoriesError('')
-    } catch (err) {
-      if (!active) return
+        setCategories(Array.isArray(data) ? data : [])
+        setCategoriesError('')
+      } catch (err) {
+        if (!active) return
 
-      setCategoriesError(err.message || 'Could not load categories.')
-    } finally {
-      if (active) setCategoriesLoading(false)
+        setCategoriesError(err.message || 'Could not load categories.')
+      } finally {
+        if (active) setCategoriesLoading(false)
+      }
     }
-  }
 
-  loadCategories()
+    loadCategories()
 
-  return () => {
-    active = false
-  }
-}, [apiRequest])
+    return () => {
+      active = false
+    }
+  }, [apiRequest])
 
   useEffect(() => {
     let active = true
@@ -289,33 +289,33 @@ try {
     loadProducts()
     return () => { active = false }
   }, [apiRequest, filters, page])
-useEffect(() => {
-  let active = true
+  useEffect(() => {
+    let active = true
 
-  async function loadCart() {
-    if (!token) return
+    async function loadCart() {
+      if (!token) return
 
-    try {
-      const data = await apiRequest('/cart', {}, token)
+      try {
+        const data = await apiRequest('/cart', {}, token)
 
-      if (active) {
-        setCart(data || EMPTY_CART)
+        if (active) {
+          setCart(data || EMPTY_CART)
+        }
+      } catch (err) {
+        if (active && !err.authExpired) {
+          setMessage(`Could not load your cart: ${err.message}`)
+        }
+      } finally {
+        if (active) setCartLoading(false)
       }
-    } catch (err) {
-      if (active && !err.authExpired) {
-        setMessage(`Could not load your cart: ${err.message}`)
-      }
-    } finally {
-      if (active) setCartLoading(false)
     }
-  }
 
-  loadCart()
+    loadCart()
 
-  return () => {
-    active = false
-  }
-}, [token, apiRequest])
+    return () => {
+      active = false
+    }
+  }, [token, apiRequest])
 
   function applyFilters(event) {
     event.preventDefault()
@@ -476,6 +476,8 @@ useEffect(() => {
       setMessage('Your cart is empty.')
       return
     }
+
+
     setCheckingOut(true)
     setMessage('')
     try {
@@ -485,6 +487,50 @@ useEffect(() => {
       setPaymentHistoryOrderId(null)
       setPaymentHistory([])
       setCart(EMPTY_CART)
+      // Refresh product stock after a successful checkout.
+      try {
+        const params = new URLSearchParams()
+        params.set('page', String(page))
+        params.set('size', String(PAGE_SIZE))
+
+        if (filters.name) params.set('name', filters.name)
+        if (filters.categoryId) params.set('categoryId', filters.categoryId)
+        if (filters.minPrice !== '') params.set('minPrice', filters.minPrice)
+        if (filters.maxPrice !== '') params.set('maxPrice', filters.maxPrice)
+        if (filters.sort) params.set('sort', filters.sort)
+
+        const catalogue = await apiRequest(
+          `/products?${params.toString()}`,
+          {},
+          ''
+        )
+
+        const content = Array.isArray(catalogue)
+          ? catalogue
+          : (catalogue?.content ?? [])
+
+        setProducts(content)
+        setSelectedProduct((current) => {
+          if (!current) return null
+
+          const updatedProduct = content.find(
+            (product) => product.id === current.id
+          )
+
+          return updatedProduct ?? current
+        })
+
+        setPageInfo({
+          totalPages: Array.isArray(catalogue)
+            ? 1
+            : Math.max(1, catalogue?.totalPages ?? 1),
+          totalElements: Array.isArray(catalogue)
+            ? content.length
+            : (catalogue?.totalElements ?? content.length),
+        })
+      } catch {
+        // The order was placed successfully, even if refreshing the catalogue fails.
+      }
       setShowCart(false)
       setShowOrders(false)
       setMessage(`Order #${order.orderId} has been placed. Complete payment to confirm it.`)
@@ -566,6 +612,17 @@ useEffect(() => {
       const catalogue = await apiRequest(`/products?${params.toString()}`, {}, '')
       const content = Array.isArray(catalogue) ? catalogue : (catalogue?.content ?? [])
       setProducts(content)
+
+      setSelectedProduct((current) => {
+        if (!current) return null
+
+        const updatedProduct = content.find(
+          (product) => product.id === current.id
+        )
+
+        return updatedProduct ?? current
+      })
+
       setPageInfo({
         totalPages: Array.isArray(catalogue) ? 1 : Math.max(1, catalogue?.totalPages ?? 1),
         totalElements: Array.isArray(catalogue) ? content.length : (catalogue?.totalElements ?? content.length),
